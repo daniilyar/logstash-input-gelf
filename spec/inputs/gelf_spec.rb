@@ -66,6 +66,52 @@ describe LogStash::Inputs::Gelf do
 
     events.each_with_index do |e, i|
       insist { e["message"] } == messages[i]
+      insist { e["host"] } == Socket.gethostname
+    end
+  end
+
+  context "timestamp coercion" do
+    # these test private methods, this is advisable for now until we roll out this coercion in the Timestamp class
+    # and remove this
+
+    it "should coerce an integer numeric value" do
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800).to_iso8601).to eq("2000-01-01T05:00:00.000Z")
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800).usec).to eq(0)
+    end
+
+    it "should coerce an float numeric value and preserve milliseconds precision in iso8601" do
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.1.to_f).to_iso8601).to eq("2000-01-01T05:00:00.100Z")
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.12.to_f).to_iso8601).to eq("2000-01-01T05:00:00.120Z")
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.123.to_f).to_iso8601).to eq("2000-01-01T05:00:00.123Z")
+    end
+
+    it "should coerce an float numeric value and preserve usec precision" do
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.1.to_f).usec).to eq(100000)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.12.to_f).usec).to eq(120000)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.123.to_f).usec).to eq(123000)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.1234.to_f).usec).to eq(123400)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.12345.to_f).usec).to eq(123450)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.123456.to_f).usec).to eq(123456)
+    end
+  end
+
+  context "json timetstamp coercion" do
+    # these test private methods, this is advisable for now until we roll out this coercion in the Timestamp class
+    # and remove this
+
+    it "should coerce integer numeric json timestamp input" do
+      event = LogStash::Inputs::Gelf.new_event("{\"timestamp\":946702800}", "dummy")
+      expect(event.timestamp.to_iso8601).to eq("2000-01-01T05:00:00.000Z")
+    end
+
+    it "should coerce float numeric value and preserve milliseconds precision in iso8601" do
+      event = LogStash::Inputs::Gelf.new_event("{\"timestamp\":946702800.123}", "dummy")
+      expect(event.timestamp.to_iso8601).to eq("2000-01-01T05:00:00.123Z")
+    end
+
+    it "should coerce an float numeric value and preserve usec precision" do
+      event = LogStash::Inputs::Gelf.new_event("{\"timestamp\":946702800.123456}", "dummy")
+      expect(event.timestamp.usec).to eq(123456)
     end
   end
 end
