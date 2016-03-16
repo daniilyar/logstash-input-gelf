@@ -124,7 +124,7 @@ describe LogStash::Inputs::Gelf do
     end
   end
 
-  context "json timetstamp coercion" do
+  context "json timestamp coercion" do
     # these test private methods, this is advisable for now until we roll out this coercion in the Timestamp class
     # and remove this
 
