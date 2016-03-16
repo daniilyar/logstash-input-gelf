@@ -89,9 +89,12 @@ describe LogStash::Inputs::Gelf do
       expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.1.to_f).usec).to eq(100000)
       expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.12.to_f).usec).to eq(120000)
       expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.123.to_f).usec).to eq(123000)
-      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.1234.to_f).usec).to eq(123400)
-      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.12345.to_f).usec).to eq(123450)
-      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.123456.to_f).usec).to eq(123456)
+
+      # since Java Event relies on JodaTime which supports only milliseconds precision
+      # the usec method will only be precise up to milliseconds.
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.1234.to_f).usec).to be_within(1000).of(123400)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.12345.to_f).usec).to be_within(1000).of(123450)
+      expect(LogStash::Inputs::Gelf.coerce_timestamp(946702800.123456.to_f).usec).to be_within(1000).of(123456)
     end
   end
 
@@ -111,7 +114,7 @@ describe LogStash::Inputs::Gelf do
 
     it "should coerce an float numeric value and preserve usec precision" do
       event = LogStash::Inputs::Gelf.new_event("{\"timestamp\":946702800.123456}", "dummy")
-      expect(event.timestamp.usec).to eq(123456)
+      expect(event.timestamp.usec).to be_within(1000).of(123456)
     end
   end
 end
