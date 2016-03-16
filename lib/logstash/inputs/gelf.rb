@@ -135,11 +135,11 @@ class LogStash::Inputs::Gelf < LogStash::Inputs::Base
 
   # transform a given timestamp value into a proper LogStash::Timestamp, preserving microsecond precision
   # and work around a JRuby issue with Time.at loosing fractional part with BigDecimal.
-  # @param timestamp [String|Numeric] a String, Numeric (integer, float or bigdecimal) representation
+  # @param timestamp [Numeric] a Numeric (integer, float or bigdecimal) timestampo representation
   # @return [LogStash::Timestamp] the proper LogStash::Timestamp representation
   def self.coerce_timestamp(timestamp)
     # bug in JRuby prevents correcly parsing a BigDecimal fractional part, see https://github.com/elastic/logstash/issues/4565
-    LogStash::Timestamp.at(timestamp.to_i, BigDecimal.new(timestamp.to_s).frac * 1000000)
+    timestamp.is_a?(BigDecimal) ? LogStash::Timestamp.at(timestamp.to_i, timestamp.frac * 1000000) : LogStash::Timestamp.at(timestamp)
   end
 
   private
