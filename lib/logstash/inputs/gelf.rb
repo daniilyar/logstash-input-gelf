@@ -51,6 +51,9 @@ class LogStash::Inputs::Gelf < LogStash::Inputs::Base
   #
   config :strip_leading_underscore, :validate => :boolean, :default => true
 
+  # Whether or not to use TCP instead of UDP
+  config :use_tcp, :validate => :boolean, :default => false
+
   RECONNECT_BACKOFF_SLEEP = 5
 
   public
@@ -68,7 +71,11 @@ class LogStash::Inputs::Gelf < LogStash::Inputs::Base
   def run(output_queue)
     begin
       # udp server
-      udp_listener(output_queue)
+      if @use_tcp
+        tcp_listener(output_queue)
+      else
+        udp_listener(output_queue)
+      end
     rescue => e
       unless stop?
         @logger.warn("gelf listener died", :exception => e, :backtrace => e.backtrace)
@@ -80,8 +87,76 @@ class LogStash::Inputs::Gelf < LogStash::Inputs::Base
 
   public
   def stop
+    @tcp.close
     @udp.close
   rescue IOError # the plugin is currently shutting down, so its safe to ignore theses errors
+  end
+
+  private
+  def tcp_listener(output_queue)
+
+    @logger.warn("Starting gelf listener (tcp) ...", :address => "#{@host}:#{@port}")
+
+    @tcp = TCPServer.new(@host, @port)
+
+    while !@shutdown_requested
+      Thread.new(@tcp.accept) do |client|
+        @logger.debug? && @logger.debug("Gelf (tcp): Accepting connection from:  #{client.peeraddr[2]}:#{client.peeraddr[1]}")
+
+        begin
+          while !stop?
+          
+            begin # Read from socket
+              @data_in = client.gets("\u0000")
+            rescue => ex
+              @logger.warn("Gelf (tcp): failed gets from client socket:", :exception => ex, :backtrace => ex.backtrace)
+            end
+ 
+             if @data_in.nil?
+              @logger.warn("Gelf (tcp): socket read succeeded, but data is nil.  Skipping.")
+              next
+            end
+           
+            # data received.  Remove trailing \0
+            @data_in[-1] == "\u0000" && @data_in = @data_in[0...-1]
+            begin # Parse JSON
+              @jsonObj = LogStash::Json.load(@data_in)
+            rescue => ex
+              @logger.warn("Gelf (tcp): failed to parse a message. Skipping: " + @data_in, :exception => ex, :backtrace => ex.backtrace)
+              next
+            end
+           
+            begin  # Create event
+              event = LogStash::Event.new(@jsonObj)
+              event["source_host"] = @use_numeric_client_addr && client.addr(:numeric) || client.addr(:hostname)
+              if event["timestamp"].is_a?(Numeric)
+                event["@timestamp"] = LogStash::Timestamp.at(event["timestamp"])
+                event.remove("timestamp")
+              end
+              remap_gelf(event) if @remap
+              strip_leading_underscore(event) if @strip_leading_underscore
+              decorate(event)
+              output_queue << event
+            rescue => ex
+              @logger.warn("Gelf (tcp): failed to create event from json object. Skipping: " + @jsonObj.to_s, :exception => ex, :backtrace => ex.backtrace)
+            end 
+
+          end # while client
+          @logger.debug? && @logger.debug("Gelf (tcp): Closing client connection")
+          client.close
+          client = nil
+        rescue => ex
+          @logger.warn("Gelf (tcp): client socket failed.", :exception => ex, :backtrace => ex.backtrace)
+        ensure
+          if !client.nil? 
+            @logger.debug? && @logger.debug("Gelf (tcp): Ensuring client is closed")
+            client.close
+            client = nil
+          end
+        end # begin client
+      end  # Thread.new
+    end # @shutdown_requested
+    
   end
 
   private
